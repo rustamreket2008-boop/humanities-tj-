@@ -24,9 +24,17 @@ nav a{color:white;text-decoration:none;margin:8px;font-size:14px}
 input,textarea{width:100%;padding:13px;margin:8px 0;border:1px solid #ccd6e4;border-radius:8px;font-size:16px}
 button{background:#10477e;color:white;border:0;padding:13px 20px;border-radius:8px;cursor:pointer;font-size:15px;margin-top:8px}
 button:hover{background:#082b55}
+button:disabled{opacity:.5;cursor:not-allowed}
 .news-item{background:#edf4fc;padding:16px;border-radius:10px;margin:12px 0}
 #message{margin-top:12px;font-weight:bold}
 #adminInfo{background:#fff4d6;padding:12px;border-radius:8px;margin-top:12px;overflow-wrap:anywhere}
+#adminPanel{margin-top:20px}
+.pending-item{background:#edf4fc;padding:16px;border-radius:10px;margin:12px 0;border:1px solid #d5e1ef}
+.pending-item h3{color:#10477e;margin-bottom:8px}
+.pending-actions{display:flex;gap:10px;flex-wrap:wrap}
+.approve{background:#176b43}
+.reject{background:#a32d3c}
+#pendingMessage{margin:12px 0}
 footer{background:#082b55;color:white;text-align:center;padding:25px;line-height:2}
 </style>
 </head>
@@ -87,10 +95,8 @@ footer{background:#082b55;color:white;text-align:center;padding:25px;line-height
 <section class="section">
 <h2>Фиристодани хабар аз тарафи донишҷӯён</h2>
 <p>Хабари шумо аввал барои санҷиш фиристода мешавад. Баъди тасдиқи маъмур дар сомона пайдо мешавад.</p>
-
 <form id="newsForm">
-<input id="newsTitle" type="text" maxlength="200"
-placeholder="Номи хабар ё эълон" required>
+<input id="newsTitle" type="text" maxlength="200" placeholder="Номи хабар ё эълон" required>
 <button type="submit">Фиристодани хабар</button>
 </form>
 <div id="message"></div>
@@ -106,8 +112,16 @@ placeholder="Номи хабар ё эълон" required>
 <section class="section">
 <h2>Воридшавии маъмур</h2>
 <p>Танҳо маъмур бояд бо ҳисоби Google ворид шавад.</p>
-<button id="adminLogin">Воридшавӣ бо Google</button>
+<button id="adminLogin" type="button">Воридшавӣ бо Google</button>
 <div id="adminInfo" hidden></div>
+
+<div id="adminPanel" hidden>
+<h2>Панели идоракунии маъмур</h2>
+<p>Хабарҳои донишҷӯён барои санҷиш:</p>
+<div id="pendingMessage">Рӯйхат ҳоло бор нашудааст.</div>
+<div id="pendingList"></div>
+<button id="refreshPending" type="button">Навсозии рӯйхат</button>
+</div>
 </section>
 
 </main>
@@ -122,7 +136,7 @@ import { initializeApp }
 from "https://www.gstatic.com/firebasejs/13.1.0/firebase-app.js";
 
 import {
- getFirestore, collection, addDoc, getDocs, query, where
+ getFirestore, collection, addDoc, getDocs, query, where, doc, updateDoc
 } from "https://www.gstatic.com/firebasejs/13.1.0/firebase-firestore.js";
 
 import {
@@ -139,6 +153,8 @@ const firebaseConfig = {
  measurementId: "G-59QHV13M6E"
 };
 
+const ADMIN_UID = "CXNEi5heEASBaZBkBmpRSZZUSIh2";
+
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 const auth = getAuth(app);
@@ -147,6 +163,10 @@ const provider = new GoogleAuthProvider();
 const form = document.getElementById("newsForm");
 const message = document.getElementById("message");
 const newsList = document.getElementById("newsList");
+const adminInfo = document.getElementById("adminInfo");
+const adminPanel = document.getElementById("adminPanel");
+const pendingList = document.getElementById("pendingList");
+const pendingMessage = document.getElementById("pendingMessage");
 
 // Фиристодани хабар
 form.addEventListener("submit", async (event) => {
@@ -170,7 +190,6 @@ form.addEventListener("submit", async (event) => {
 
    message.textContent =
      "Хабар фиристода шуд! Он баъди тасдиқи маъмур нашр мешавад.";
-
    form.reset();
  } catch (error) {
    console.error(error);
@@ -195,12 +214,12 @@ async function loadNews() {
      return;
    }
 
-   result.forEach((doc) => {
+   result.forEach((submission) => {
      const item = document.createElement("div");
      item.className = "news-item";
 
      const heading = document.createElement("h3");
-     heading.textContent = doc.data().title;
+     heading.textContent = submission.data().title || "Бе ном";
 
      item.appendChild(heading);
      newsList.appendChild(item);
@@ -211,26 +230,126 @@ async function loadNews() {
  }
 }
 
-loadNews();
+// Бор кардани хабарҳои интизори тасдиқ
+async function loadPendingNews() {
+ pendingList.replaceChildren();
+ pendingMessage.textContent = "Хабарҳо бор шуда истодаанд...";
 
-// Воридшавии маъмур бо Google
+ try {
+   const q = query(
+     collection(db, "submissions"),
+     where("status", "==", "pending")
+   );
+
+   const result = await getDocs(q);
+
+   if (result.empty) {
+     pendingMessage.textContent = "Ҳоло хабарҳои интизорӣ нестанд.";
+     return;
+   }
+
+   pendingMessage.textContent = "Шумораи хабарҳои интизорӣ: " + result.size;
+
+   result.forEach((submission) => {
+     const data = submission.data();
+
+     const item = document.createElement("div");
+     item.className = "pending-item";
+
+     const heading = document.createElement("h3");
+     heading.textContent = data.title || "Бе ном";
+
+     const date = document.createElement("p");
+     date.textContent = "Сана: " + (data.createdAt || "Маълум нест");
+
+     const actions = document.createElement("div");
+     actions.className = "pending-actions";
+
+     const approve = document.createElement("button");
+     approve.className = "approve";
+     approve.textContent = "Тасдиқ";
+
+     const reject = document.createElement("button");
+     reject.className = "reject";
+     reject.textContent = "Рад";
+
+     approve.addEventListener("click", () => {
+       changeStatus(submission.id, "approved", approve, reject);
+     });
+
+     reject.addEventListener("click", () => {
+       changeStatus(submission.id, "rejected", approve, reject);
+     });
+
+     actions.append(approve, reject);
+     item.append(heading, date, actions);
+     pendingList.appendChild(item);
+   });
+
+ } catch (error) {
+   console.error(error);
+   pendingMessage.textContent =
+     "Хабарҳоро бор кардан нашуд. Қоидаҳои Firestore-ро санҷед.";
+ }
+}
+
+// Тасдиқ ё рад кардани хабар
+async function changeStatus(id, status, approve, reject) {
+ approve.disabled = true;
+ reject.disabled = true;
+
+ try {
+   await updateDoc(doc(db, "submissions", id), {
+     status: status
+   });
+
+   await loadPendingNews();
+
+   if (status === "approved") {
+     await loadNews();
+   }
+
+ } catch (error) {
+   console.error(error);
+   alert("Хато! Қоидаҳои Firestore-ро санҷед.");
+   approve.disabled = false;
+   reject.disabled = false;
+ }
+}
+
+// Воридшавии маъмур
 document.getElementById("adminLogin").addEventListener("click", async () => {
- const info = document.getElementById("adminInfo");
- info.hidden = false;
- info.textContent = "Воридшавӣ...";
+ adminInfo.hidden = false;
+ adminInfo.textContent = "Воридшавӣ...";
 
  try {
    const result = await signInWithPopup(auth, provider);
-   info.textContent =
-     "Воридшавӣ муваффақ шуд. UID-и шумо: " + result.user.uid +
-     " | Почта: " + result.user.email;
+
+   if (result.user.uid !== ADMIN_UID) {
+     adminInfo.textContent = "Ин ҳисоб ҳуқуқи маъмур надорад.";
+     adminPanel.hidden = true;
+     return;
+   }
+
+   adminInfo.textContent = "Воридшавии маъмур муваффақ шуд.";
+   adminPanel.hidden = false;
+
+   await loadPendingNews();
+
  } catch (error) {
    console.error(error);
-   info.textContent = "Хато: " + error.message;
+   adminInfo.textContent = "Хато ҳангоми воридшавӣ: " + error.message;
+   adminPanel.hidden = true;
  }
 });
+
+// Навсозии рӯйхати хабарҳо
+document.getElementById("refreshPending").addEventListener("click", () => {
+ loadPendingNews();
+});
+
+loadNews();
 </script>
 
 </body>
-                 </html>
-  
+</html>
