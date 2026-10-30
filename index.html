@@ -9,7 +9,7 @@
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:Arial,sans-serif;background:#f3f6fb;color:#17243a}
 header{background:#082b55;color:white;padding:24px 6%;text-align:center}
-header h1{font-size:27px;margin-bottom:10px}
+header h1{font-size:25px;margin-bottom:10px}
 header p{color:#d6e6ff}
 nav{background:#10477e;padding:15px;text-align:center}
 nav a{color:white;text-decoration:none;margin:8px;font-size:14px}
@@ -22,6 +22,12 @@ nav a{color:white;text-decoration:none;margin:8px;font-size:14px}
 .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:15px}
 .card{background:#edf4fc;padding:20px;border-radius:12px}
 .card h3{color:#10477e;margin-bottom:10px}
+input,textarea{width:100%;padding:13px;margin:8px 0;border:1px solid #ccd6e4;border-radius:8px;font-size:16px}
+button{background:#10477e;color:white;border:0;padding:13px 20px;border-radius:8px;cursor:pointer;font-size:15px;margin-top:8px}
+button:hover{background:#082b55}
+.news-item{background:#edf4fc;padding:16px;border-radius:10px;margin:12px 0}
+#message{margin-top:12px;font-weight:bold}
+#adminInfo{background:#fff4d6;padding:12px;border-radius:8px;margin-top:12px;overflow-wrap:anywhere}
 footer{background:#082b55;color:white;text-align:center;padding:25px;line-height:2}
 </style>
 </head>
@@ -37,6 +43,7 @@ footer{background:#082b55;color:white;text-align:center;padding:25px;line-height
 <a href="#about">Дар бораи мо</a>
 <a href="#departments">Кафедраҳо</a>
 <a href="#students">Донишҷӯён</a>
+<a href="#news">Хабарҳо</a>
 <a href="#contact">Тамос</a>
 </nav>
 
@@ -72,11 +79,36 @@ footer{background:#082b55;color:white;text-align:center;padding:25px;line-height
 <p>Тарбияи насли босавод, соҳибкасб ва ватандӯст тавассути таълими босифат ва рушди маърифат.</p>
 </section>
 
+<section class="section" id="news">
+<h2>Хабарҳо ва эълонҳо</h2>
+<p>Хабарҳои тасдиқшудаи факултет дар ин ҷо намоиш дода мешаванд.</p>
+<div id="newsList">Хабарҳо бор шуда истодаанд...</div>
+</section>
+
+<section class="section">
+<h2>Фиристодани хабар аз тарафи донишҷӯён</h2>
+<p>Хабари шумо аввал барои санҷиш фиристода мешавад. Баъди тасдиқи маъмур дар сомона пайдо мешавад.</p>
+
+<form id="newsForm">
+<input id="newsTitle" type="text" maxlength="200"
+placeholder="Номи хабар ё эълон" required>
+<button type="submit">Фиристодани хабар</button>
+</form>
+<div id="message"></div>
+</section>
+
 <section class="section" id="contact">
 <h2>Тамос бо мо</h2>
 <p>Донишгоҳи байналмилалии сайёҳӣ ва соҳибкории Тоҷикистон</p>
 <p>Факултети гуманитарӣ-педагогӣ</p>
 <p>Суроға ва рақами телефон: баъдтар илова карда мешавад.</p>
+</section>
+
+<section class="section">
+<h2>Воридшавии маъмур</h2>
+<p>Танҳо маъмур бояд бо ҳисоби Google ворид шавад.</p>
+<button id="adminLogin">Воридшавӣ бо Google</button>
+<div id="adminInfo" hidden></div>
 </section>
 
 </main>
@@ -86,6 +118,120 @@ footer{background:#082b55;color:white;text-align:center;padding:25px;line-height
 <p>Ҳамаи ҳуқуқҳо ҳифз шудаанд.</p>
 </footer>
 
+<script type="module">
+import { initializeApp }
+from "https://www.gstatic.com/firebasejs/13.1.0/firebase-app.js";
+
+import {
+ getFirestore, collection, addDoc, getDocs, query, where
+} from "https://www.gstatic.com/firebasejs/13.1.0/firebase-firestore.js";
+
+import {
+ getAuth, GoogleAuthProvider, signInWithPopup
+} from "https://www.gstatic.com/firebasejs/13.1.0/firebase-auth.js";
+
+const firebaseConfig = {
+ apiKey: "AIzaSyABKmH3-nPL9g72nHD9ZyT5ISwXixo1edU",
+ authDomain: "humanities-tj.firebaseapp.com",
+ projectId: "humanities-tj",
+ storageBucket: "humanities-tj.firebasestorage.app",
+ messagingSenderId: "346905117733",
+ appId: "1:346905117733:web:f0c28d4e6639ff4fdbebcc",
+ measurementId: "G-59QHV13M6E"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+const auth = getAuth(app);
+const provider = new GoogleAuthProvider();
+
+const form = document.getElementById("newsForm");
+const message = document.getElementById("message");
+const newsList = document.getElementById("newsList");
+
+// Фиристодани хабар
+form.addEventListener("submit", async (event) => {
+ event.preventDefault();
+
+ const title = document.getElementById("newsTitle").value.trim();
+
+ if (!title || title.length > 200) {
+   message.textContent = "Номи хабарро дуруст нависед.";
+   return;
+ }
+
+ message.textContent = "Хабар фиристода мешавад...";
+
+ try {
+   await addDoc(collection(db, "submissions"), {
+     title: title,
+     status: "pending",
+     createdAt: new Date().toISOString()
+   });
+
+   message.textContent =
+     "Хабар фиристода шуд! Он баъди тасдиқи маъмур нашр мешавад.";
+
+   form.reset();
+ } catch (error) {
+   console.error(error);
+   message.textContent =
+     "Хато ҳангоми фиристодан. Танзимоти Firebase-ро санҷед.";
+ }
+});
+
+// Намоиши хабарҳои тасдиқшуда
+async function loadNews() {
+ try {
+   const q = query(
+     collection(db, "submissions"),
+     where("status", "==", "approved")
+   );
+
+   const result = await getDocs(q);
+   newsList.replaceChildren();
+
+   if (result.empty) {
+     newsList.textContent = "Ҳоло хабарҳои тасдиқшуда нестанд.";
+     return;
+   }
+
+   result.forEach((doc) => {
+     const item = document.createElement("div");
+     item.className = "news-item";
+
+     const heading = document.createElement("h3");
+     heading.textContent = doc.data().title;
+
+     item.appendChild(heading);
+     newsList.appendChild(item);
+   });
+ } catch (error) {
+   console.error(error);
+   newsList.textContent = "Хабарҳоро бор кардан нашуд.";
+ }
+}
+
+loadNews();
+
+// Воридшавии маъмур бо Google
+document.getElementById("adminLogin").addEventListener("click", async () => {
+ const info = document.getElementById("adminInfo");
+ info.hidden = false;
+ info.textContent = "Воридшавӣ...";
+
+ try {
+   const result = await signInWithPopup(auth, provider);
+   info.textContent =
+     "Воридшавӣ муваффақ шуд. UID-и шумо: " + result.user.uid +
+     " | Почта: " + result.user.email;
+ } catch (error) {
+   console.error(error);
+   info.textContent = "Хато: " + error.message;
+ }
+});
+</script>
+
 </body>
-  </html>
+                 </html>
   
