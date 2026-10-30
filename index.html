@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="tg">
 <head>
@@ -25,17 +26,19 @@ input,textarea{width:100%;padding:13px;margin:8px 0;border:1px solid #ccd6e4;bor
 button{background:#10477e;color:white;border:0;padding:13px 20px;border-radius:8px;cursor:pointer;font-size:15px;margin-top:8px}
 button:hover{background:#082b55}
 button:disabled{opacity:.5;cursor:not-allowed}
-.news-item{background:#edf4fc;padding:16px;border-radius:10px;margin:12px 0}
-#message{margin-top:12px;font-weight:bold}
+.news-item,.pending-item{background:#edf4fc;padding:16px;border-radius:10px;margin:12px 0;border:1px solid #d5e1ef}
+.news-item h3,.pending-item h3{color:#10477e;margin-bottom:10px}
+.news-image{width:100%;max-height:420px;object-fit:contain;border-radius:10px;margin-top:12px;background:#e1e8f0}
+.video-frame{width:100%;aspect-ratio:16/9;border:0;border-radius:10px;margin-top:12px}
+.news-link{display:inline-block;margin-top:10px;color:#10477e;overflow-wrap:anywhere}
+#message,#pendingMessage{margin-top:12px;font-weight:bold}
 #adminInfo{background:#fff4d6;padding:12px;border-radius:8px;margin-top:12px;overflow-wrap:anywhere}
 #adminPanel{margin-top:20px}
-.pending-item{background:#edf4fc;padding:16px;border-radius:10px;margin:12px 0;border:1px solid #d5e1ef}
-.pending-item h3{color:#10477e;margin-bottom:8px}
 .pending-actions{display:flex;gap:10px;flex-wrap:wrap}
 .approve{background:#176b43}
 .reject{background:#a32d3c}
-#pendingMessage{margin:12px 0}
 footer{background:#082b55;color:white;text-align:center;padding:25px;line-height:2}
+.small-note{font-size:13px;color:#596b80;margin:5px 0 12px}
 </style>
 </head>
 <body>
@@ -95,8 +98,18 @@ footer{background:#082b55;color:white;text-align:center;padding:25px;line-height
 <section class="section">
 <h2>Фиристодани хабар аз тарафи донишҷӯён</h2>
 <p>Хабари шумо аввал барои санҷиш фиристода мешавад. Баъди тасдиқи маъмур дар сомона пайдо мешавад.</p>
+
 <form id="newsForm">
 <input id="newsTitle" type="text" maxlength="200" placeholder="Номи хабар ё эълон" required>
+
+<label for="newsImage">Пайванди акс (ихтиёрӣ)</label>
+<input id="newsImage" type="url" placeholder="https://example.com/image.jpg">
+<p class="small-note">Пайванди мустақими акси интернетиро гузоред.</p>
+
+<label for="newsVideo">Пайванди видео аз YouTube (ихтиёрӣ)</label>
+<input id="newsVideo" type="url" placeholder="https://www.youtube.com/watch?v=...">
+<p class="small-note">Пайванди видеои YouTube-ро гузоред.</p>
+
 <button type="submit">Фиристодани хабар</button>
 </form>
 <div id="message"></div>
@@ -168,14 +181,85 @@ const adminPanel = document.getElementById("adminPanel");
 const pendingList = document.getElementById("pendingList");
 const pendingMessage = document.getElementById("pendingMessage");
 
+function validHttpUrl(value) {
+ if (!value) return true;
+ try {
+   const url = new URL(value);
+   return url.protocol === "https:" || url.protocol === "http:";
+ } catch {
+   return false;
+ }
+}
+
+function getYoutubeId(value) {
+ try {
+   const url = new URL(value);
+   if (url.hostname === "youtu.be") {
+     return url.pathname.slice(1).split("/")[0];
+   }
+   if (url.hostname === "www.youtube.com" || url.hostname === "youtube.com") {
+     if (url.pathname === "/watch") return url.searchParams.get("v");
+     const parts = url.pathname.split("/");
+     if (["embed", "shorts"].includes(parts[1])) return parts[2];
+   }
+ } catch {}
+ return null;
+}
+
+function addMedia(parent, data) {
+ if (data.imageUrl && validHttpUrl(data.imageUrl)) {
+   const image = document.createElement("img");
+   image.className = "news-image";
+   image.src = data.imageUrl;
+   image.alt = "Акси хабар";
+   image.loading = "lazy";
+   image.referrerPolicy = "no-referrer";
+   image.onerror = () => image.remove();
+   parent.appendChild(image);
+ }
+
+ if (data.videoUrl) {
+   const videoId = getYoutubeId(data.videoUrl);
+   if (videoId && /^[a-zA-Z0-9_-]{11}$/.test(videoId)) {
+     const frame = document.createElement("iframe");
+     frame.className = "video-frame";
+     frame.src = "https://www.youtube-nocookie.com/embed/" + videoId;
+     frame.title = "Видеои хабар";
+     frame.allow = "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share";
+     frame.allowFullscreen = true;
+     parent.appendChild(frame);
+   } else {
+     const link = document.createElement("a");
+     link.className = "news-link";
+     link.href = data.videoUrl;
+     link.target = "_blank";
+     link.rel = "noopener noreferrer";
+     link.textContent = "Тамошои видео";
+     parent.appendChild(link);
+   }
+ }
+}
+
 // Фиристодани хабар
 form.addEventListener("submit", async (event) => {
  event.preventDefault();
 
  const title = document.getElementById("newsTitle").value.trim();
+ const imageUrl = document.getElementById("newsImage").value.trim();
+ const videoUrl = document.getElementById("newsVideo").value.trim();
 
  if (!title || title.length > 200) {
    message.textContent = "Номи хабарро дуруст нависед.";
+   return;
+ }
+
+ if (!validHttpUrl(imageUrl) || !validHttpUrl(videoUrl)) {
+   message.textContent = "Пайванди акс ё видеоро дуруст нависед.";
+   return;
+ }
+
+ if (videoUrl && !getYoutubeId(videoUrl)) {
+   message.textContent = "Пайванди YouTube-ро дуруст гузоред.";
    return;
  }
 
@@ -183,29 +267,25 @@ form.addEventListener("submit", async (event) => {
 
  try {
    await addDoc(collection(db, "submissions"), {
-     title: title,
+     title,
+     imageUrl,
+     videoUrl,
      status: "pending",
      createdAt: new Date().toISOString()
    });
 
-   message.textContent =
-     "Хабар фиристода шуд! Он баъди тасдиқи маъмур нашр мешавад.";
+   message.textContent = "Хабар фиристода шуд! Он баъди тасдиқи маъмур нашр мешавад.";
    form.reset();
  } catch (error) {
    console.error(error);
-   message.textContent =
-     "Хато ҳангоми фиристодан. Танзимоти Firebase-ро санҷед.";
+   message.textContent = "Хато ҳангоми фиристодан. Қоидаҳои Firestore-ро санҷед.";
  }
 });
 
-// Намоиши хабарҳои тасдиқшуда
+// Хабарҳои тасдиқшуда
 async function loadNews() {
  try {
-   const q = query(
-     collection(db, "submissions"),
-     where("status", "==", "approved")
-   );
-
+   const q = query(collection(db, "submissions"), where("status", "==", "approved"));
    const result = await getDocs(q);
    newsList.replaceChildren();
 
@@ -215,13 +295,15 @@ async function loadNews() {
    }
 
    result.forEach((submission) => {
+     const data = submission.data();
      const item = document.createElement("div");
      item.className = "news-item";
 
      const heading = document.createElement("h3");
-     heading.textContent = submission.data().title || "Бе ном";
-
+     heading.textContent = data.title || "Бе ном";
      item.appendChild(heading);
+
+     addMedia(item, data);
      newsList.appendChild(item);
    });
  } catch (error) {
@@ -230,17 +312,13 @@ async function loadNews() {
  }
 }
 
-// Бор кардани хабарҳои интизори тасдиқ
+// Хабарҳои интизори тасдиқ
 async function loadPendingNews() {
  pendingList.replaceChildren();
  pendingMessage.textContent = "Хабарҳо бор шуда истодаанд...";
 
  try {
-   const q = query(
-     collection(db, "submissions"),
-     where("status", "==", "pending")
-   );
-
+   const q = query(collection(db, "submissions"), where("status", "==", "pending"));
    const result = await getDocs(q);
 
    if (result.empty) {
@@ -252,7 +330,6 @@ async function loadPendingNews() {
 
    result.forEach((submission) => {
      const data = submission.data();
-
      const item = document.createElement("div");
      item.className = "pending-item";
 
@@ -273,42 +350,29 @@ async function loadPendingNews() {
      reject.className = "reject";
      reject.textContent = "Рад";
 
-     approve.addEventListener("click", () => {
-       changeStatus(submission.id, "approved", approve, reject);
-     });
+     approve.addEventListener("click", () => changeStatus(submission.id, "approved", approve, reject));
+     reject.addEventListener("click", () => changeStatus(submission.id, "rejected", approve, reject));
 
-     reject.addEventListener("click", () => {
-       changeStatus(submission.id, "rejected", approve, reject);
-     });
-
+     item.append(heading, date);
+     addMedia(item, data);
+     item.appendChild(actions);
      actions.append(approve, reject);
-     item.append(heading, date, actions);
      pendingList.appendChild(item);
    });
-
  } catch (error) {
    console.error(error);
-   pendingMessage.textContent =
-     "Хабарҳоро бор кардан нашуд. Қоидаҳои Firestore-ро санҷед.";
+   pendingMessage.textContent = "Хабарҳоро бор кардан нашуд. Қоидаҳои Firestore-ро санҷед.";
  }
 }
 
-// Тасдиқ ё рад кардани хабар
 async function changeStatus(id, status, approve, reject) {
  approve.disabled = true;
  reject.disabled = true;
 
  try {
-   await updateDoc(doc(db, "submissions", id), {
-     status: status
-   });
-
+   await updateDoc(doc(db, "submissions", id), {status});
    await loadPendingNews();
-
-   if (status === "approved") {
-     await loadNews();
-   }
-
+   if (status === "approved") await loadNews();
  } catch (error) {
    console.error(error);
    alert("Хато! Қоидаҳои Firestore-ро санҷед.");
@@ -333,9 +397,7 @@ document.getElementById("adminLogin").addEventListener("click", async () => {
 
    adminInfo.textContent = "Воридшавии маъмур муваффақ шуд.";
    adminPanel.hidden = false;
-
    await loadPendingNews();
-
  } catch (error) {
    console.error(error);
    adminInfo.textContent = "Хато ҳангоми воридшавӣ: " + error.message;
@@ -343,13 +405,9 @@ document.getElementById("adminLogin").addEventListener("click", async () => {
  }
 });
 
-// Навсозии рӯйхати хабарҳо
-document.getElementById("refreshPending").addEventListener("click", () => {
- loadPendingNews();
-});
+document.getElementById("refreshPending").addEventListener("click", loadPendingNews);
 
 loadNews();
 </script>
-
 </body>
 </html>
